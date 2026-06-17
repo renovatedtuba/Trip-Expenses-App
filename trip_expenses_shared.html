@@ -220,15 +220,13 @@ let lastUpdated = null;
 let isSaving = false;
 
 // ── Init ─────────────────────────────────────────────────────
+const HARDCODED_URL = 'https://script.google.com/macros/s/AKfycbzHNPQQtzNYmb_sJ7FB0lTenyin2P9TJuR1v8aBRZBu_c579WvEnWJMuZXLRAhrZG76/exec';
+
 window.addEventListener('load', () => {
-  const saved = localStorage.getItem('tripExpenseScriptUrl');
-  if (saved) {
-    scriptUrl = saved;
-    document.getElementById('scriptUrl').value = saved;
-    document.getElementById('setupBanner').style.display = 'none';
-    loadFromDrive();
-    startPolling();
-  }
+  scriptUrl = HARDCODED_URL;
+  document.getElementById('setupBanner').style.display = 'none';
+  loadFromDrive();
+  startPolling();
 });
 
 // ── Script URL ───────────────────────────────────────────────
