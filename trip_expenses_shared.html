@@ -448,8 +448,14 @@ function addExpense() {
   if (splitMode === 'equal') {
     const checked = people.filter(p => document.getElementById('chk_' + p)?.checked);
     if (checked.length === 0) { errEl.textContent = 'Select at least one person.'; return; }
-    const share = amount / checked.length;
-    checked.forEach(p => splits[p] = parseFloat(share.toFixed(2)));
+    const cents = Math.round(amount * 100);
+    const base = Math.floor(cents / checked.length);
+    let extra = cents - base * checked.length;
+    checked.forEach(p => {
+      const c = base + (extra > 0 ? 1 : 0);
+      if (extra > 0) extra--;
+      splits[p] = c / 100;
+    });
   } else if (splitMode === 'custom') {
     let total = 0;
     people.forEach(p => {
@@ -470,7 +476,17 @@ function addExpense() {
     });
     if (Object.keys(splits).length === 0) { errEl.textContent = 'Select at least one person.'; return; }
     if (Math.abs(totalPct - 100) > 0.5) { errEl.textContent = `Percentages add up to ${totalPct.toFixed(0)}%, need 100%.`; return; }
-    Object.keys(splits).forEach(p => splits[p] = parseFloat((splits[p] / 100 * amount).toFixed(2)));
+    const totalCents = Math.round(amount * 100);
+    const keys = Object.keys(splits);
+    let assigned = 0;
+    keys.forEach((p, idx) => {
+      if (idx < keys.length - 1) {
+        const c = Math.round(splits[p] / 100 * totalCents);
+        splits[p] = c / 100; assigned += c;
+      } else {
+        splits[p] = (totalCents - assigned) / 100;  // last person absorbs the remainder
+      }
+    });
   }
 
   expenses.push({ id: Date.now(), desc, amount, paidBy, category, splits });
@@ -516,7 +532,8 @@ function getBalances() {
   const bal = {};
   people.forEach(p => bal[p] = 0);
   expenses.forEach(exp => {
-    if (bal[exp.paidBy] !== undefined) bal[exp.paidBy] += exp.amount;
+    const splitTotal = Object.values(exp.splits).reduce((s, a) => s + a, 0);
+    if (bal[exp.paidBy] !== undefined) bal[exp.paidBy] += splitTotal;
     Object.entries(exp.splits).forEach(([p, amt]) => { if (bal[p] !== undefined) bal[p] -= amt; });
   });
   return bal;
