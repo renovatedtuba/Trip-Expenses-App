@@ -558,24 +558,32 @@ function renderBalances() {
 function renderSettle() {
   const container = document.getElementById('settleList');
   if (people.length === 0 || expenses.length === 0) { container.innerHTML = '<div class="empty">No settlements needed.</div>'; return; }
-  const bal = getBalances();
-  const creditors = [], debtors = [];
-  Object.entries(bal).forEach(([p, v]) => {
-    if (v > 0.005) creditors.push({ name: p, amount: v });
-    else if (v < -0.005) debtors.push({ name: p, amount: -v });
+
+  // Trace every debt to the person who actually paid for it
+  const debt = {};  // debt[debtor][creditor] = amount
+  expenses.forEach(exp => {
+    Object.entries(exp.splits).forEach(([p, amt]) => {
+      if (p === exp.paidBy) return;              // your own share isn't a debt
+      debt[p] = debt[p] || {};
+      debt[p][exp.paidBy] = (debt[p][exp.paidBy] || 0) + amt;
+    });
   });
-  creditors.sort((a,b) => b.amount - a.amount);
-  debtors.sort((a,b) => b.amount - a.amount);
+
+  // Net mutual debts between each pair (if A owes B and B owes A)
   const transactions = [];
-  let i = 0, j = 0;
-  while (i < creditors.length && j < debtors.length) {
-    const settle = Math.min(creditors[i].amount, debtors[j].amount);
-    if (settle > 0.005) transactions.push({ from: debtors[j].name, to: creditors[i].name, amount: settle });
-    creditors[i].amount -= settle;
-    debtors[j].amount -= settle;
-    if (creditors[i].amount < 0.005) i++;
-    if (debtors[j].amount < 0.005) j++;
-  }
+  const done = new Set();
+  people.forEach(a => people.forEach(b => {
+    if (a === b || done.has(b + '|' + a)) return;
+    done.add(a + '|' + b);
+    const ab = (debt[a] && debt[a][b]) || 0;
+    const ba = (debt[b] && debt[b][a]) || 0;
+    const net = ab - ba;
+    if (net > 0.005) transactions.push({ from: a, to: b, amount: net });
+    else if (net < -0.005) transactions.push({ from: b, to: a, amount: -net });
+  }));
+
+  transactions.sort((x, y) => y.amount - x.amount);
+
   if (transactions.length === 0) { container.innerHTML = '<div class="empty" style="color:#10b981;font-weight:600">🎉 All settled up!</div>'; return; }
   container.innerHTML = '';
   transactions.forEach(t => {
