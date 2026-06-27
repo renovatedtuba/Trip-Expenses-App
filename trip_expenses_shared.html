@@ -569,8 +569,8 @@ function renderSettle() {
     });
   });
 
-  // Net mutual debts between each pair (if A owes B and B owes A)
-  const transactions = [];
+  // Net mutual debts between each pair → directed graph real[debtor][creditor]
+  const real = {};
   const done = new Set();
   people.forEach(a => people.forEach(b => {
     if (a === b || done.has(b + '|' + a)) return;
@@ -578,9 +578,52 @@ function renderSettle() {
     const ab = (debt[a] && debt[a][b]) || 0;
     const ba = (debt[b] && debt[b][a]) || 0;
     const net = ab - ba;
-    if (net > 0.005) transactions.push({ from: a, to: b, amount: net });
-    else if (net < -0.005) transactions.push({ from: b, to: a, amount: -net });
+    if (Math.abs(net) <= 0.005) return;
+    const [from, to, amt] = net > 0 ? [a, b, net] : [b, a, -net];
+    real[from] = real[from] || {};
+    real[from][to] = amt;
   }));
+
+  // Net balance per person from the real-debt graph
+  const bal = {};
+  people.forEach(p => bal[p] = 0);
+  Object.keys(real).forEach(from => Object.entries(real[from]).forEach(([to, amt]) => {
+    bal[from] -= amt; bal[to] += amt;
+  }));
+
+  // Available credit per creditor
+  const creds = {};
+  people.forEach(p => { if (bal[p] > 0.005) creds[p] = bal[p]; });
+
+  // Most-constrained debtors first: settle people who owe the fewest distinct
+  // creditors before the big debtors soak up that creditor's capacity. Each
+  // debtor pays the people they actually owe first; only falls back to another
+  // creditor if their real creditors run out of capacity.
+  const debtors = people.filter(p => bal[p] < -0.005)
+    .map(p => ({ name: p, amount: -bal[p] }))
+    .sort((x, y) => (Object.keys(real[x.name] || {}).length - Object.keys(real[y.name] || {}).length)
+                    || (y.amount - x.amount));
+
+  const transactions = [];
+  debtors.forEach(d => {
+    let amt = d.amount;
+    const owed = real[d.name] || {};
+    const order = [
+      ...Object.keys(owed).sort((a, b) => owed[b] - owed[a]),        // real creditors first
+      ...Object.keys(creds).sort((a, b) => creds[b] - creds[a])      // then anyone with credit left
+    ];
+    const tried = new Set();
+    for (const c of order) {
+      if (amt <= 0.005) break;
+      if (tried.has(c) || c === d.name) continue;
+      tried.add(c);
+      const avail = creds[c] || 0;
+      if (avail <= 0.005) continue;
+      const pay = Math.min(amt, avail);
+      transactions.push({ from: d.name, to: c, amount: pay });
+      amt -= pay; creds[c] = avail - pay;
+    }
+  });
 
   transactions.sort((x, y) => y.amount - x.amount);
 
